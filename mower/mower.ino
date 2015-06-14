@@ -3,9 +3,9 @@
 * Forward sensor is fixed to 10cm, readout is deactivated!
 * Serial output is still enabled and printing
 * avoidanc manoeuvre only lights a led
-* move and cut are empty functions for now
-* cut_switch and obstacle_switch pins are not defined
-* init ESC is commented to save time
+* move only outputs sound so far
+* motor movement speed has to be defined
+* init est is commented, it seems the esc controller stays initiated...
 ***********************/
 
 // includes
@@ -31,7 +31,7 @@ Servo esc;  // create servo object to control a servo
 // setup routine
 void setup() {
   pinSetup();
-  ativateInterrupt();
+  //activateInterrupt();
   Serial.begin(9600);         // Open serial monitor to have USB debug
   setupCutting();
 }
@@ -48,6 +48,7 @@ void loop() {
   }
   else {
     while ( avoidanceManoeuvre ) {
+      stop_movement();
       executeAvoidanceManoeuvre();
     }
   }
@@ -66,17 +67,21 @@ void pinSetup(){
   pinMode(OBSTACLE_SWITCH_L,  INPUT);
   pinMode(OBSTACLE_SWITCH_F,  INPUT);
   pinMode(OBSTACLE_SWITCH_R,  INPUT);
+  pinMode(MOTOR_LEFT_PWM,     OUTPUT);
+  pinMode(MOTOR_RIGHT_PWM,    OUTPUT);
+  pinMode(MOTOR_LEFT_BRAKE,   OUTPUT);
+  pinMode(MOTOR_RIGHT_BRAKE,  OUTPUT);
 }
 
-void activateInterrupt(){
-  attachInterrupt(CUT_SWITCH, cutSwitch, CHANGE);
-}
+//void activateInterrupt(){
+//  attachInterrupt(CUT_SWITCH, cutSwitch, CHANGE);
+//}
 
 /****************/
 // Timing
 boolean intervalReached(){
-  if (millis() - previousTime > INTERVAL) { return true }
-  else { return false }
+  if (millis() - previousTime > INTERVAL) { return true; }
+  else { return false; }
 }
 
 void resetInterval(){
@@ -94,6 +99,7 @@ void overflowSafety(){
 void readSensors(){
   readUSsensor();
   readObstacleSwitches();
+  readCutSwitch();
 }
 
 void readUSsensor(){
@@ -107,7 +113,7 @@ void readUSsensor(){
   Serial.print("  //  ");
   Serial.print(dist_R);
   Serial.println(" cm");
-  if (dist_L <= 3 || dist_F <= 3 || dist_R <= 3) {
+  if (dist_L <= SONAR_OBSTACLE_DISTANCE || dist_F <= SONAR_OBSTACLE_DISTANCE || dist_R <= SONAR_OBSTACLE_DISTANCE) {
     doAvoidance();
   }
 } // readUSsensor
@@ -124,6 +130,13 @@ void readObstacleSwitches(){
 /****************/
 // Movement
 void move(){
+  releaseMotorBrakes();
+  setMovementDirection(BOTH, "forward");
+  setForwardSpeed();
+}
+
+void stop_movement(){
+  engageMotorBrakes();
 }
 
 void doAvoidance(){
@@ -141,29 +154,64 @@ void executeAvoidanceManoeuvre(){
   resetAvoidance();
 }
 
+void releaseMotorBrakes(){
+  digitalWrite(MOTOR_LEFT_BRAKE, LOW);
+  digitalWrite(MOTOR_RIGHT_BRAKE, LOW);
+}
+
+void engageMotorBrakes(){
+  digitalWrite(MOTOR_LEFT_BRAKE, HIGH);
+  digitalWrite(MOTOR_RIGHT_BRAKE, HIGH);
+}
+
+void setForwardSpeed(){
+  analogWrite(MOTOR_LEFT_PWM, FORWARD_SPEED);
+  analogWrite(MOTOR_RIGHT_PWM, FORWARD_SPEED);
+}
+
+void setMovementDirection(int motor, String direction){
+  uint8_t value;
+  if (direction == "forward") {value = HIGH; }
+  else {value = LOW; }
+  switch (motor){
+    case BOTH:
+    digitalWrite(MOTOR_LEFT_DIR, value);
+    digitalWrite(MOTOR_RIGHT_DIR, value);
+    break;
+    case LEFT:
+    digitalWrite(MOTOR_LEFT_DIR, value);
+    break;
+    case RIGHT:
+    digitalWrite(MOTOR_RIGHT_DIR, value);
+    break;
+  }
+}
+
 /****************/
 // Cutting
 void setupCutting(){
-  esc.attach(ESC_PIN);
-  // initESC();
+  esc.attach(ESC_PORT);
+  //initESC();
 }
 
 void cut(){
-  if ( !stopCut ){ esc.write(ESC_MAX) }
-  else { stopCut() }
+  if ( !stopCut ){ esc.write(ESC_MAX); }
+  else { stopCutting(); }
 }
 
-void stopCut(){
+void stopCutting(){
   esc.write(ESC_MIN);
 }
 
-void cutSwitch(){
+void readCutSwitch(){
   if ( digitalRead(CUT_SWITCH) == HIGH ) {
+    Serial.println("cut switch is high, cutting");
     stopCut = false;
   }
   else {
     stopCut = true;
-    stopCut();
+    Serial.println("cut switch is low, no cut");
+    stopCutting();
   }
 }
 
